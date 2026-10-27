@@ -1,0 +1,20 @@
+dist
+node_modules
+
+# n8n-node-cli local dev instance
+.n8n-node-cli
+
+# Editor / IDE
+.idea
+
+# Local machine-specific MCP server config (contains a local IDE port)
+.mcp.json
+
+# OS
+.DS_Store
+
+# Logs & env
+*.log
+.env
+.env.*
+!.env.example
