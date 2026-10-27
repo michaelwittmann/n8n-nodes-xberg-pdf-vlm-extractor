@@ -39,9 +39,11 @@
 #
 # ─── TAG CONVENTION ────────────────────────────────────────────────────────────
 #
-# This workflow triggers on tags matching "*.*.*" (e.g. 0.2.0).
-# If you prefer tags with a "v" prefix (e.g. v0.2.0), change the filter to:
-#   tags: ['v*.*.*']
+# This workflow triggers on tags matching "v*.*.*" (e.g. v0.2.0), which is the
+# format `@n8n/node-cli release` (release-it) produces by default.
+# If you switch the release tool to emit bare tags (e.g. 0.2.0), change the
+# filter to:
+#   tags: ['*.*.*']
 #
 # ─── RELEASE PROCESS ───────────────────────────────────────────────────────────
 #
@@ -57,9 +59,9 @@ name: Publish
 on:
   push:
     tags:
-      # Matches 0.1.0, 1.2.3, 2.0.0-rc.1, etc.
-      # See "TAG CONVENTION" above if you prefer tags with a "v" prefix.
-      - '*.*.*'
+      # Matches v0.1.0, v1.2.3, v2.0.0-rc.1, etc. — the format the release tool emits.
+      # See "TAG CONVENTION" above if you prefer bare tags without a "v" prefix.
+      - 'v*.*.*'
 
 jobs:
   publish:
