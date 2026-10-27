@@ -1,5 +1,6 @@
 dist
 node_modules
+coverage
 
 # n8n-node-cli local dev instance
 .n8n-node-cli

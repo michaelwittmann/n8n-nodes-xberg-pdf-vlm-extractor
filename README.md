@@ -1,5 +1,10 @@
 # n8n-nodes-xberg-pdf-vlm-extractor
 
+[![npm version](https://img.shields.io/npm/v/n8n-nodes-xberg-pdf-vlm-extractor.svg)](https://www.npmjs.com/package/n8n-nodes-xberg-pdf-vlm-extractor)
+[![CI](https://github.com/michaelwittmann/n8n-nodes-xberg-pdf-vlm-extractor/actions/workflows/ci.yml/badge.svg)](https://github.com/michaelwittmann/n8n-nodes-xberg-pdf-vlm-extractor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node >= 22](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](#prerequisites)
+
 Two [n8n](https://n8n.io) community nodes that use a **Vision Language Model (VLM)** to work with PDFs, powered by the [`@xberg-io/xberg`](https://www.npmjs.com/package/@xberg-io/xberg) document-extraction library:
 
 - **PDF OCR** — runs VLM-based OCR on a PDF and returns a **searchable PDF** with the recognised text embedded as an invisible layer.
@@ -8,6 +13,8 @@ Two [n8n](https://n8n.io) community nodes that use a **Vision Language Model (VL
 Both nodes let you pick an LLM **provider** — **Ollama** (local), **OpenAI**, **Anthropic**, or **Google Gemini** — authenticate with n8n's matching built-in credential, and choose the model from a dropdown populated live from that provider.
 
 > **Self-hosted only.** This package has a runtime dependency (`@xberg-io/xberg` ships platform-specific native binaries), so it is **not eligible for n8n Cloud verification**. It installs and runs on self-hosted n8n.
+
+![The two nodes in the n8n nodes panel](docs/img/nodes-panel.png)
 
 ## How the two nodes fit together
 
@@ -21,6 +28,15 @@ Read/Write Files ──▶ PDF OCR ──▶ PDF Field Extractor ──▶ …
 - **No text layer and you'd rather not chain two nodes?** Turn on **OCR if No Text Layer** in the Field Extractor to let it OCR the PDF itself.
 
 The two steps are fully independent — use either on its own.
+
+## Quick start
+
+1. **Install** the package in your self-hosted n8n (see [Installation](#installation)).
+2. **Import the example workflow:** in n8n, open a new workflow → **⋯ menu → Import from File** and pick [`docs/example-workflow.json`](docs/example-workflow.json) (or copy its contents and paste onto the canvas). It wires up **Read PDF from Disk → PDF OCR → PDF Field Extractor**.
+3. **Create an Ollama credential** (**Settings → Credentials → New → Ollama**, Base URL `http://localhost:11434`) and select it on both nodes. Swap in OpenAI/Anthropic/Gemini if you prefer — see [Providers & credentials](#providers--credentials).
+4. Point **Read PDF from Disk** at a PDF, pick a **vision-capable model** from the dropdown, and run.
+
+![The example workflow on the canvas](docs/img/workflow-canvas.png)
 
 ## Installation
 
@@ -40,7 +56,7 @@ npm install n8n-nodes-xberg-pdf-vlm-extractor
 
 ## Prerequisites
 
-- **Node.js >= 24** (required by current n8n; `@xberg-io/xberg` itself needs >= 22).
+- **Node.js >= 22** (`@xberg-io/xberg` needs >= 22; current n8n runs on Node 24).
 - An LLM provider with a **vision-capable model**, and the matching n8n credential (see below). For a local setup, a running **Ollama** server with a vision model pulled:
 
   ```bash
@@ -71,6 +87,8 @@ The **Model** dropdown is populated live from the selected provider (Ollama's `/
 
 Runs VLM OCR on every page of the incoming PDF and returns a **searchable PDF**.
 
+![PDF OCR node configuration](docs/img/pdf-ocr-config.png)
+
 1. Feed a PDF into the node as binary data (e.g. from **Read/Write Files from Disk** or **HTTP Request**). The default binary field name is `data`.
 2. Pick the **Provider** and **Model** from the dropdowns (the model list is loaded from the selected provider).
 3. **Replace Existing Text Layer** (default **on**): removes any text already embedded in the PDF before adding the OCR layer, so a PDF that already carries a (possibly wrong) text layer doesn't end up with two overlapping layers. Turn it off to keep the original text and append the OCR layer on top.
@@ -92,6 +110,8 @@ Runs VLM OCR on every page of the incoming PDF and returns a **searchable PDF**.
 ### PDF Field Extractor
 
 Extracts structured fields described by a JSON Schema. It expects a PDF that **already has a text layer** (e.g. the output of **PDF OCR**, or a born-digital PDF).
+
+![PDF Field Extractor node configuration](docs/img/field-extractor-config.png)
 
 1. Provide the PDF binary as above.
 2. Pick the **Provider** and **Model**.
@@ -141,6 +161,7 @@ Shape extraction through the **JSON Schema** and **Schema Description**, not a c
 npm install
 npm run build        # compile TypeScript to dist/
 npm run lint         # lint
+npm test             # run the vitest suite
 npm run dev          # start a local n8n with the nodes hot-reloaded (http://localhost:5678)
 ```
 
@@ -151,9 +172,25 @@ N8N_DEV_RELOAD=true npx n8n start
 n8n-node dev --external-n8n --custom-user-folder <path>
 ```
 
+### Tests
+
+The [vitest](https://vitest.dev) suite covers the shared provider/OCR config helpers, the searchable-PDF text-layer builder (replace vs. append round-trip), and the node-description contract for both nodes:
+
+```bash
+npm test              # run once
+npm run test:watch    # watch mode
+npm run test:coverage # with a coverage report
+```
+
+CI runs lint + tests + build on Node 22 and 24 for every push and PR — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+## Releasing
+
+Publishing to npm happens from GitHub Actions with an npm **provenance** statement (required for n8n verification from May 1, 2026). See **[RELEASING.md](RELEASING.md)** for the one-time npm/GitHub setup and the per-release steps.
+
 ## Compatibility
 
-- Requires Node.js >= 24.
+- Requires Node.js >= 22 (dev/`npm run dev` wants 24, matching current n8n).
 - Built and tested against `n8n-workflow` 2.x, `@xberg-io/xberg` 1.3.x, and `pdf-lib` 1.17.x.
 
 ## License
