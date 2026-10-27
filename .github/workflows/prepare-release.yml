@@ -1,0 +1,190 @@
+# Manual, laptop-free release: bump the version, tag, and publish entirely from
+# the GitHub Actions UI. Use this when you can't (or don't want to) run
+# `npm run release` locally.
+#
+# This is an ALTERNATIVE to publish.yml, not a replacement:
+#   • publish.yml       → bump locally (npm run release) → tag push → publish.
+#   • prepare-release.yml (this file) → click "Run workflow", pick the bump,
+#                          everything happens in CI.
+#
+# ─── FLOW ──────────────────────────────────────────────────────────────────────
+#
+#   you:   Actions → "Prepare release" → Run workflow → pick patch/minor/major
+#             ▼
+#   CI:    bump job    → npm version <type> + changelog + commit + tag + push
+#             ▼
+#   CI:    stage job   → npm ci + test + build + pack → upload tarball artifact
+#             │  (pauses on the protected `npm-release` environment)
+#             ▼
+#   you:   Actions → this run → "Review deployments" → Approve
+#             ▼
+#   CI:    publish job → npm run release (CI mode) → OIDC publish w/ provenance
+#
+# The version is chosen in the GH UI; shipping to npm is still a deliberate
+# human approval on the `npm-release` environment. No long-lived npm token —
+# publish authenticates over the same OIDC Trusted Publisher as publish.yml.
+#
+# ─── PREREQUISITES ─────────────────────────────────────────────────────────────
+#
+# Same one-time setup as publish.yml (see RELEASING.md):
+#   • A protected `npm-release` environment with Required reviewers.
+#   • An npm Trusted Publisher for this repo. Because OIDC matches on the
+#     workflow FILENAME, the npm Trusted Publisher config must list BOTH
+#     publish.yml AND prepare-release.yml (add a second publisher entry, same
+#     owner/repo, Environment `npm-release`). Otherwise the publish job here
+#     gets `OIDC permission denied`.
+
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-type:
+        description: 'Semver bump'
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+concurrency:
+  # Never let two release runs race on the version bump / tag.
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # ── Bump: decide the version, commit, tag, and push. ─────────────────────────
+  bump:
+    name: Bump version and tag
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Needed to push the bump commit and the version tag back to the repo.
+      contents: write
+
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so auto-changelog can see prior tags.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: 'npm ci'
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        # `npm version` edits package.json, makes a commit, and creates the
+        # tag vX.Y.Z (default tag prefix is "v"), all locally. It does NOT push.
+        run: |
+          new_version="$(npm version "${{ inputs.release-type }}" -m "Release %s")"
+          echo "version=${new_version}" >> "$GITHUB_OUTPUT"
+          echo "Bumped to ${new_version}"
+
+      - name: Regenerate changelog
+        # Mirror what `npm run release` does locally via its after:bump hook,
+        # then amend it into the release commit so history stays tidy.
+        # Non-fatal: a changelog hiccup must not abort a release whose version
+        # bump + tag already exist locally.
+        continue-on-error: true
+        run: |
+          npx --yes auto-changelog -p
+          if ! git diff --quiet -- CHANGELOG.md; then
+            git add CHANGELOG.md
+            git commit --amend --no-edit
+            # Re-point the tag at the amended commit.
+            git tag -f "${{ steps.bump.outputs.version }}"
+          fi
+
+      - name: Push commit and tag
+        run: |
+          git push origin HEAD:main
+          git push origin "${{ steps.bump.outputs.version }}"
+
+  # ── Stage: build, test, and pack the bumped code. No secrets, no publish. ────
+  stage:
+    name: Stage release artifact
+    needs: bump
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Check out the tag the bump job just created, not the stale default.
+          ref: ${{ needs.bump.outputs.version }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: 'npm ci'
+
+      - name: Run tests
+        run: 'npm test'
+
+      - name: Build
+        run: 'npm run build'
+
+      - name: Pack tarball
+        run: 'npm pack'
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: '*.tgz'
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── Publish: gated on the protected `npm-release` environment. ───────────────
+  publish:
+    name: Publish to npm
+    needs: [bump, stage]
+    runs-on: ubuntu-latest
+    environment: npm-release
+
+    permissions:
+      # Required to mint an OIDC token for npm Trusted Publishing + provenance.
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.version }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org/'
+
+      - name: Install dependencies
+        run: 'npm ci'
+
+      - name: Release
+        # In CI, `n8n-node release` runs lint + build, then `npm publish` with
+        # provenance (NPM_CONFIG_PROVENANCE=true). Auth is via OIDC — no token.
+        run: 'npm run release'

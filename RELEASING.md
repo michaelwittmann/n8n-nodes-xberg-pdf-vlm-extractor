@@ -56,6 +56,11 @@ Branches → Add branch ruleset → Require status checks** → select the CI jo
 
 ## Cutting a release
 
+There are two ways to cut a release. Both end at the same gated OIDC publish;
+pick whichever fits where you are.
+
+### Option A — locally (`npm run release`)
+
 Run the release locally. `@n8n/node-cli release` is context-aware: **run locally
 it only bumps/tags/pushes — it does not publish**; the publish happens later in
 CI.
@@ -80,9 +85,29 @@ The pushed tag triggers `publish.yml`:
 7. On approval, the publish job runs `npm run release` (CI mode), which publishes
    to npm with provenance over OIDC.
 
-> **Tag convention.** The workflow triggers on tags matching `v*.*.*` (e.g.
-> `v0.2.0`) — the format `@n8n/node-cli release` produces. To use bare tags,
-> change the trigger in `publish.yml` to `tags: ['*.*.*']`.
+### Option B — from the GitHub UI, no laptop (`prepare-release.yml`)
+
+For when you don't have your dev machine. Everything — including the version
+bump — happens in CI.
+
+1. Repo → **Actions → "Prepare release" → Run workflow**.
+2. Pick the **Semver bump** (patch / minor / major) and run.
+3. The **bump** job runs `npm version <type>`, regenerates the changelog,
+   commits, tags `vX.Y.Z`, and pushes.
+4. The **stage** job builds/tests/packs the bumped code (same as Option A).
+5. The **publish** job waits on the `npm-release` environment — **Review
+   deployments → Approve** — then publishes over OIDC with provenance.
+
+> **Extra one-time setup for Option B.** npm Trusted Publishers match on the
+> **exact workflow filename**, so `prepare-release.yml` needs its *own* Trusted
+> Publisher entry in addition to the one for `publish.yml` (npm allows up to 10
+> per package). Add a second publisher: same owner/repo, workflow filename
+> `prepare-release.yml`, Environment `npm-release`. Without it the publish job
+> fails with `OIDC permission denied`.
+
+> **Tag convention.** `publish.yml` triggers on tags matching `v*.*.*` (e.g.
+> `v0.2.0`) — the format `@n8n/node-cli release` produces, and the format
+> `prepare-release.yml`'s `npm version` bump produces too.
 
 > **Public access is required for provenance.** `package.json` sets
 > `publishConfig.access: "public"` (and `provenance: true`) so `npm publish`
