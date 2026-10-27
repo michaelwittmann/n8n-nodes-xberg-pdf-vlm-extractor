@@ -1,0 +1,47 @@
+# Dependabot version-update config.
+#
+# NOTE: this governs the automated *update PRs* Dependabot opens — it does not
+# change the security-*alert* banner ("N vulnerabilities") on the repo. Those
+# alerts come from vulnerability scanning and are dismissed per-alert in the
+# Security tab, not filtered here.
+#
+# This package ships only `dist/` and has two runtime deps (@xberg-io/xberg,
+# pdf-lib), both advisory-free. The noisy advisories all live in the dev
+# toolchain (@n8n/node-cli, release-it) where no non-breaking fix exists yet,
+# so we group npm updates into one weekly PR and skip majors (which we can't
+# act on without the upstream CLI moving first).
+version: 2
+updates:
+  # Keep the GitHub Actions used by ci.yml / publish.yml current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # npm dependencies — grouped, minor/patch only.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+    groups:
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      development-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Majors need manual review (and the dev-tooling majors have no clean
+      # upstream fix); surface them as alerts, not auto-PRs.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
