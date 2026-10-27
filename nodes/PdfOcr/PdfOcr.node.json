@@ -1,14 +1,9 @@
 {
-	"node": "n8n-nodes-xberg-pdf-vlm-extractor.pdfVlmExtractor",
+	"node": "n8n-nodes-xberg-pdf-vlm-extractor.pdfOcr",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
 	"categories": ["Utility", "Development"],
 	"resources": {
-		"credentialDocumentation": [
-			{
-				"url": "https://github.com/michaelwittmann/n8n-nodes-xberg-pdf-vlm-extractor#credentials"
-			}
-		],
 		"primaryDocumentation": [
 			{
 				"url": "https://github.com/michaelwittmann/n8n-nodes-xberg-pdf-vlm-extractor"

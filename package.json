@@ -35,15 +35,14 @@
 	"n8n": {
 		"n8nNodesApiVersion": 1,
 		"strict": false,
-		"credentials": [
-			"dist/credentials/XbergVlmApi.credentials.js"
-		],
 		"nodes": [
-			"dist/nodes/PdfVlmExtractor/PdfVlmExtractor.node.js"
+			"dist/nodes/PdfOcr/PdfOcr.node.js",
+			"dist/nodes/PdfFieldExtractor/PdfFieldExtractor.node.js"
 		]
 	},
 	"dependencies": {
-		"@xberg-io/xberg": "^1.3.10"
+		"@xberg-io/xberg": "^1.3.10",
+		"pdf-lib": "^1.17.1"
 	},
 	"devDependencies": {
 		"@n8n/node-cli": "*",

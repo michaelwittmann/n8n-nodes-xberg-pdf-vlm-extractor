@@ -14,4 +14,17 @@ export default [
 			'@n8n/community-nodes/no-runtime-dependencies': 'off',
 		},
 	},
+	{
+		// Both nodes deliberately reuse n8n's built-in `ollamaApi` credential
+		// (from @n8n/n8n-nodes-langchain) instead of shipping a bespoke one, so a
+		// user configures their Ollama endpoint once and both nodes pick it up —
+		// the same pattern the first-party LangChain nodes use. We therefore
+		// cannot declare the credential in this package's n8n.credentials field,
+		// which is what the no-credential-reuse rule requires. Disable it for the
+		// node files; no credential definition is bundled here to abuse.
+		files: ['nodes/**/*.ts'],
+		rules: {
+			'@n8n/community-nodes/no-credential-reuse': 'off',
+		},
+	},
 ];
