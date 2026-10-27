@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/n8n-nodes-xberg-pdf-vlm-extractor.svg)](https://www.npmjs.com/package/n8n-nodes-xberg-pdf-vlm-extractor)
 [![CI](https://github.com/michaelwittmann/n8n-nodes-xberg-pdf-vlm-extractor/actions/workflows/ci.yml/badge.svg)](https://github.com/michaelwittmann/n8n-nodes-xberg-pdf-vlm-extractor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Node >= 22](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](#prerequisites)
+[![Node >= 24](https://img.shields.io/badge/node-%3E%3D24-brightgreen.svg)](#prerequisites)
 
 Two [n8n](https://n8n.io) community nodes that use a **Vision Language Model (VLM)** to work with PDFs, powered by the [`@xberg-io/xberg`](https://www.npmjs.com/package/@xberg-io/xberg) document-extraction library:
 
@@ -56,7 +56,7 @@ npm install n8n-nodes-xberg-pdf-vlm-extractor
 
 ## Prerequisites
 
-- **Node.js >= 22** (`@xberg-io/xberg` needs >= 22; current n8n runs on Node 24).
+- **Node.js >= 24** (matches current n8n; `@xberg-io/xberg` needs >= 22, but this package targets the n8n runtime).
 - An LLM provider with a **vision-capable model**, and the matching n8n credential (see below). For a local setup, a running **Ollama** server with a vision model pulled:
 
   ```bash
@@ -165,7 +165,7 @@ npm test             # run the vitest suite
 npm run dev          # start a local n8n with the nodes hot-reloaded (http://localhost:5678)
 ```
 
-`npm run dev` ([docs](https://docs.n8n.io/integrations/creating-nodes/test/run-node-locally/)) is the local test environment — no separate n8n instance is required. It requires **Node.js >= 24**. To run against an existing host n8n instead:
+`npm run dev` ([docs](https://docs.n8n.io/integrations/creating-nodes/test/run-node-locally/)) is the local test environment — no separate n8n instance is required. To run against an existing host n8n instead:
 
 ```bash
 N8N_DEV_RELOAD=true npx n8n start
@@ -182,7 +182,7 @@ npm run test:watch    # watch mode
 npm run test:coverage # with a coverage report
 ```
 
-CI runs lint + tests + build on Node 22 and 24 for every push and PR — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+CI runs lint + tests + build on Node 24 for every push and PR — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Releasing
 
@@ -190,7 +190,7 @@ Publishing to npm happens from GitHub Actions with an npm **provenance** stateme
 
 ## Compatibility
 
-- Requires Node.js >= 22 (dev/`npm run dev` wants 24, matching current n8n).
+- Requires Node.js >= 24 (matching current n8n).
 - Built and tested against `n8n-workflow` 2.x, `@xberg-io/xberg` 1.3.x, and `pdf-lib` 1.17.x.
 
 ## License

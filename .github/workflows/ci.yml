@@ -15,20 +15,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: false
-      matrix:
-        # 22 is the package floor (engines.node >= 22); 24 is what current n8n
-        # runs on. Exercise both so a regression on either shows up in CI.
-        node-version: [22, 24]
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js ${{ matrix.node-version }}
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          # 24 is the package floor (engines.node >= 24) and what current n8n
+          # runs on.
+          node-version: '24'
           # Caches the npm download cache, keyed on package-lock.json.
           cache: 'npm'
 
@@ -45,12 +40,9 @@ jobs:
         run: 'npm run build'
 
       - name: Upload coverage
-        # One report is enough — collect it on the n8n-target Node version.
-        if: matrix.node-version == 24
         run: 'npm run test:coverage'
 
       - name: Store coverage artifact
-        if: matrix.node-version == 24
         uses: actions/upload-artifact@v4
         with:
           name: coverage
