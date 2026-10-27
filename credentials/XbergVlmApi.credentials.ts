@@ -1,5 +1,6 @@
 import type {
 	IAuthenticateGeneric,
+	Icon,
 	ICredentialTestRequest,
 	ICredentialType,
 	INodeProperties,
@@ -18,7 +19,9 @@ import type {
 export class XbergVlmApi implements ICredentialType {
 	name = 'xbergVlmApi';
 
-	displayName = 'xberg VLM API';
+	displayName = 'Xberg VLM API';
+
+	icon: Icon = { light: 'file:../nodes/PdfVlmExtractor/pdfVlmExtractor.svg', dark: 'file:../nodes/PdfVlmExtractor/pdfVlmExtractor.svg' };
 
 	documentationUrl = 'https://platform.openai.com/docs/api-reference';
 
