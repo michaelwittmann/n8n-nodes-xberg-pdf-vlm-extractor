@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"description": "n8n community node to OCR PDFs with a Vision Language Model and extract structured fields, powered by xberg",
 	"license": "MIT",
-	"homepage": "",
+	"homepage": "https://github.com/michaelwittmann/n8n-nodes-xberg-pdf-vlm-extractor",
 	"keywords": [
 		"n8n-community-node-package",
 		"n8n",
@@ -13,7 +13,8 @@
 		"xberg"
 	],
 	"author": {
-		"name": "Michael Wittmann"
+		"name": "Michael Wittmann",
+		"email": "michael.wittmann@tum.de"
 	},
 	"repository": {
 		"type": "git",
@@ -33,7 +34,7 @@
 	],
 	"n8n": {
 		"n8nNodesApiVersion": 1,
-		"strict": true,
+		"strict": false,
 		"credentials": [
 			"dist/credentials/XbergVlmApi.credentials.js"
 		],
