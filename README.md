@@ -186,7 +186,7 @@ CI runs lint + tests + build on Node 22 and 24 for every push and PR — see [`.
 
 ## Releasing
 
-Publishing to npm happens from GitHub Actions with an npm **provenance** statement (required for n8n verification from May 1, 2026). See **[RELEASING.md](RELEASING.md)** for the one-time npm/GitHub setup and the per-release steps.
+Publishing to npm happens from GitHub Actions with an npm **provenance** statement (required for n8n verification from May 1, 2026), behind a **manual approval gate**: a tag push builds and packs the release, then the publish step waits for a maintainer to approve the `npm-release` environment before shipping over OIDC. See **[RELEASING.md](RELEASING.md)** for the one-time npm/GitHub setup and the per-release steps.
 
 ## Compatibility
 
