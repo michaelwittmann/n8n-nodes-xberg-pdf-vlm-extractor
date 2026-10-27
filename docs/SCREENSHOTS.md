@@ -9,8 +9,9 @@ relevant panel (no OS chrome), export as PNG, keep width ≤ 1600px.
 
 | Filename | Status | What to capture |
 | --- | --- | --- |
-| `nodes-panel.png` | ⬜ todo | The n8n **nodes panel** with "pdf" typed in search, showing **PDF OCR** and **PDF Field Extractor** with the package icon. Shows the icons + that both nodes are discoverable. |
-| `workflow-canvas.png` | ⬜ todo | The imported example workflow on the canvas: **Read PDF from Disk → PDF OCR → PDF Field Extractor**. (Import `docs/example-workflow.json` first.) |
+| `nodes-panel-ocr.png` | ✅ added | The n8n **nodes panel** with "PDF" typed in search, showing **PDF OCR** with its description. |
+| `nodes-panel-extractor.png` | ✅ added | The n8n **nodes panel** with "PDF Field Extractor" typed in search, showing that node with its description. |
+| `workflow-canvas.png` | ✅ added | The example workflow on the canvas: **Execute Workflow → HTTP Request → PDF OCR → PDF Field Extractor**. |
 | `pdf-ocr-config.jpg` | ✅ added | The **PDF OCR** node open, showing Provider = Ollama, a Model chosen from the dropdown, and **Replace Existing Text Layer** on. |
 | `field-extractor-config.jpg` | ✅ added | The **PDF Field Extractor** node open, showing the **JSON Schema** field with the invoice schema and the **Options → Schema Description**. |
 

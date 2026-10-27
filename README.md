@@ -14,13 +14,17 @@ Both nodes let you pick an LLM **provider** — **Ollama** (local), **OpenAI**, 
 
 > **Self-hosted only.** This package has a runtime dependency (`@xberg-io/xberg` ships platform-specific native binaries), so it is **not eligible for n8n Cloud verification**. It installs and runs on self-hosted n8n.
 
-![The two nodes in the n8n nodes panel](docs/img/nodes-panel.png)
+Both nodes show up in the n8n **nodes panel** — search "PDF":
+
+| PDF OCR | PDF Field Extractor |
+| --- | --- |
+| ![PDF OCR in the n8n nodes panel](docs/img/nodes-panel-ocr.png) | ![PDF Field Extractor in the n8n nodes panel](docs/img/nodes-panel-extractor.png) |
 
 ## How the two nodes fit together
 
 ```
-Read/Write Files ──▶ PDF OCR ──▶ PDF Field Extractor ──▶ …
- (scanned PDF)      (searchable PDF)   (structured JSON)
+PDF source ──▶ PDF OCR ──▶ PDF Field Extractor ──▶ …
+(disk / HTTP)  (searchable PDF)   (structured JSON)
 ```
 
 - **Scanned / image-only PDF?** Run **PDF OCR** first. Its output is a searchable PDF, so any downstream node — including **PDF Field Extractor** — can read the text without OCR'ing again.
@@ -32,9 +36,9 @@ The two steps are fully independent — use either on its own.
 ## Quick start
 
 1. **Install** the package in your self-hosted n8n (see [Installation](#installation)).
-2. **Import the example workflow:** in n8n, open a new workflow → **⋯ menu → Import from File** and pick [`docs/example-workflow.json`](docs/example-workflow.json) (or copy its contents and paste onto the canvas). It wires up **Read PDF from Disk → PDF OCR → PDF Field Extractor**.
+2. **Import the example workflow:** in n8n, open a new workflow → **⋯ menu → Import from File** and pick [`docs/example-workflow.json`](docs/example-workflow.json) (or copy its contents and paste onto the canvas). It wires up **Manual Trigger → HTTP Request → PDF OCR → PDF Field Extractor** — the **HTTP Request** node fetches a sample PDF, so it runs with no file on the n8n host. (Swap in **Read/Write Files from Disk** if you'd rather read a local PDF.)
 3. **Create an Ollama credential** (**Settings → Credentials → New → Ollama**, Base URL `http://localhost:11434`) and select it on both nodes. Swap in OpenAI/Anthropic/Gemini if you prefer — see [Providers & credentials](#providers--credentials).
-4. Point **Read PDF from Disk** at a PDF, pick a **vision-capable model** from the dropdown, and run.
+4. Pick a **vision-capable model** from the dropdown on each node and run.
 
 ![The example workflow on the canvas](docs/img/workflow-canvas.png)
 
