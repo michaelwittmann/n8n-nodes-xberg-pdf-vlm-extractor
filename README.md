@@ -64,8 +64,9 @@ npm install n8n-nodes-xberg-pdf-vlm-extractor
 - An LLM provider with a **vision-capable model**, and the matching n8n credential (see below). For a local setup, a running **Ollama** server with a vision model pulled:
 
   ```bash
-  ollama pull llama3.2-vision      # or any vision model, e.g. a glm-ocr tag
-  curl http://localhost:11434/api/tags   # confirm the model is listed
+  ollama pull glm-ocr              # OCR; or qwen3-vl / deepseek-ocr
+  ollama pull qwen3-vl:8b-instruct # field extraction (needs structured-output support)
+  curl http://localhost:11434/api/tags   # confirm the models are listed
   ```
 
 ## Providers & credentials
@@ -80,6 +81,18 @@ Pick the **Provider** on the node, then attach the matching credential. All four
 | **Google Gemini** | `Google Gemini(PaLM) Api` (`googlePalmApi`) | Host | `https://generativelanguage.googleapis.com` |
 
 The **Model** dropdown is populated live from the selected provider (Ollama's `/api/tags`, OpenAI/Anthropic `/models`, Gemini's `/v1beta/models`). If the endpoint is unreachable at edit time, you can still type a model ID via an [expression](https://docs.n8n.io/code/expressions/).
+
+### Verified models
+
+Models vary a lot in how well they handle OCR and schema-constrained extraction. These are the ones that worked well in testing (local Ollama tags shown); the **preferred** pick in each category is marked. Any vision-capable model your provider offers will appear in the dropdown — this is a starting point, not an allow-list.
+
+| Node | Verified models | Notes |
+| --- | --- | --- |
+| **PDF OCR** | `glm-ocr` ✅ *(best in testing)*, `qwen3-vl`, `deepseek-ocr` | OCR-tuned vision models. `glm-ocr` gave the most accurate transcription. |
+| **PDF Field Extractor** | `qwen3-vl:8b-instruct` ✅ *(preferred)*, `llama3.2:3b` | Must support **structured output** (JSON-schema-constrained generation). See the note below. |
+
+> **Field extraction needs structured-output support.** The Field Extractor always asks the model for JSON constrained to your schema (via the provider's structured-output / grammar mode). Models that don't support it — e.g. some `gemma3` tags on Ollama — fail with *"structured output is unavailable"* and return empty fields. If that happens, switch to a model from the table above or upgrade Ollama. Turning off **Strict** does not help: the constraint is inherent to how extraction works.
+
 
 > **Local Ollama in a container?** If n8n runs in a container and Ollama runs on the host, use `http://host.docker.internal:11434` (or `host.containers.internal` for Podman) as the Base URL.
 >
@@ -157,7 +170,7 @@ Extracts structured fields described by a JSON Schema. It expects a PDF that **a
 
 Shape extraction through the **JSON Schema** and **Schema Description**, not a custom prompt: xberg's extraction prompt would *replace* its tuned default outright (there's no extend/append hook), so no custom-prompt field is exposed for field extraction.
 
-> **Tip:** OCR-oriented models are great at transcription but may extract fields less reliably in strict mode. For field extraction, a general vision model (e.g. `llama3.2-vision`, `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`) can work better. `Strict` defaults to off; add a **Schema Description** to steer the model when results are off.
+> **Tip:** OCR-tuned models (e.g. `glm-ocr`, `deepseek-ocr`) are great at transcription but may extract fields less reliably. For field extraction, use a model that supports structured output — `qwen3-vl:8b-instruct` or `llama3.2:3b` worked best in testing (see [Verified models](#verified-models)). `Strict` defaults to off; add a **Schema Description** to steer the model when results are off.
 
 ## Local development
 
