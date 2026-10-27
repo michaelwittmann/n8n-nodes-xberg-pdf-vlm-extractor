@@ -40,6 +40,13 @@ GitHub mints a short-lived token per run; nothing is stored in the repo.
 > Provenance is produced in both cases because it's signed by GitHub's OIDC
 > infrastructure regardless of how npm auth is handled.
 
+> **Public access is required for provenance.** npm defaults a brand-new package
+> to `restricted` access, and provenance publishing refuses that
+> (`Can't generate provenance for new or private package, you must set access to
+> public`). `package.json` sets `publishConfig.access: "public"` (and
+> `provenance: true`) so `npm publish` picks this up automatically — no CLI flag
+> needed. Don't remove it.
+
 ### 2. (Optional) Protect `main`
 
 Require the **CI** workflow to pass on PRs before merge: repo **Settings →
