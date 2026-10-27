@@ -87,7 +87,7 @@ The **Model** dropdown is populated live from the selected provider (Ollama's `/
 
 Runs VLM OCR on every page of the incoming PDF and returns a **searchable PDF**.
 
-![PDF OCR node configuration](docs/img/pdf-ocr-config.png)
+![PDF OCR node configuration](docs/img/pdf-ocr-config.jpg)
 
 1. Feed a PDF into the node as binary data (e.g. from **Read/Write Files from Disk** or **HTTP Request**). The default binary field name is `data`.
 2. Pick the **Provider** and **Model** from the dropdowns (the model list is loaded from the selected provider).
@@ -111,7 +111,7 @@ Runs VLM OCR on every page of the incoming PDF and returns a **searchable PDF**.
 
 Extracts structured fields described by a JSON Schema. It expects a PDF that **already has a text layer** (e.g. the output of **PDF OCR**, or a born-digital PDF).
 
-![PDF Field Extractor node configuration](docs/img/field-extractor-config.png)
+![PDF Field Extractor node configuration](docs/img/field-extractor-config.jpg)
 
 1. Provide the PDF binary as above.
 2. Pick the **Provider** and **Model**.
