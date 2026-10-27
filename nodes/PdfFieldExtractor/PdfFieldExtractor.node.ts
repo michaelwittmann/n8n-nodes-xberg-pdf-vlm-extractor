@@ -73,6 +73,9 @@ export class PdfFieldExtractor implements INodeType {
 						displayName: 'Schema Description',
 						name: 'schemaDescription',
 						type: 'string',
+						typeOptions: {
+							rows: 4,
+						},
 						default: '',
 						hint: 'A sentence or two of plain-language context about the document or fields. Helps the model when field names alone are ambiguous.',
 						description: 'Optional description of the schema to help the LLM',
