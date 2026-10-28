@@ -309,6 +309,7 @@ export async function callChatCompletion(
 			const body = {
 				model: rawModel,
 				stream: false,
+				options: { temperature: 0 },
 				messages: [{ role: 'user', content: prompt }],
 			};
 			const resp = await ctx.helpers.httpRequestWithAuthentication.call(ctx, spec.credential, {
@@ -342,6 +343,7 @@ export async function callChatCompletion(
 			const body = {
 				model: rawModel,
 				max_tokens: 4096,
+				temperature: 0,
 				messages: [{ role: 'user', content: prompt }],
 			};
 			const resp = await ctx.helpers.httpRequestWithAuthentication.call(ctx, spec.credential, {
