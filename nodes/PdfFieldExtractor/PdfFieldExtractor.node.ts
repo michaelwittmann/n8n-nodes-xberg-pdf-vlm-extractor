@@ -375,52 +375,51 @@ export class PdfFieldExtractor implements INodeType {
 
 				const parseAndValidate = (raw: string): { fields: IDataObject; errors: string[] } => {
 					const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-					const parsed = JSON.parse(stripped) as IDataObject;
+					let parsed: IDataObject;
+					try {
+						parsed = JSON.parse(stripped) as IDataObject;
+					} catch {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Model returned invalid JSON. Raw response: ${raw.slice(0, 500)}`,
+							{ itemIndex: i },
+						);
+					}
 					return { fields: parsed, errors: collectErrors(parsed, schema as SchemaObject, '') };
 				};
 
 				const rawResponse = await callChatCompletion(this, i, prompt);
 
-				let fields: IDataObject;
-				try {
-					let current = parseAndValidate(rawResponse);
-					let lastRaw = rawResponse;
+				let current = parseAndValidate(rawResponse);
+				let lastRaw = rawResponse;
 
-					if (current.errors.length > 0 && outputFixingParser) {
-						for (let attempt = 0; attempt < maxRepairIterations; attempt++) {
-							const repairPrompt =
-								`Your previous response did not match the required JSON Schema. ` +
-								`Fix the following errors and return ONLY the corrected JSON object — ` +
-								`no markdown fences, no explanation.\n\n` +
-								`Errors:\n${current.errors.join('\n')}\n\n` +
-								`Your previous response:\n${lastRaw}\n\n` +
-								`JSON Schema:\n${schemaStr}`;
-							lastRaw = await callChatCompletion(this, i, repairPrompt);
-							current = parseAndValidate(lastRaw);
-							if (current.errors.length === 0) break;
-						}
+				if (current.errors.length > 0 && outputFixingParser) {
+					for (let attempt = 0; attempt < maxRepairIterations; attempt++) {
+						const repairPrompt =
+							`Your previous response did not match the required JSON Schema. ` +
+							`Fix the following errors and return ONLY the corrected JSON object — ` +
+							`no markdown fences, no explanation.\n\n` +
+							`Errors:\n${current.errors.join('\n')}\n\n` +
+							`Your previous response:\n${lastRaw}\n\n` +
+							`JSON Schema:\n${schemaStr}`;
+						lastRaw = await callChatCompletion(this, i, repairPrompt);
+						current = parseAndValidate(lastRaw);
+						if (current.errors.length === 0) break;
 					}
+				}
 
-					if (current.errors.length > 0) {
-						const suffix = outputFixingParser
-							? ` after ${maxRepairIterations} repair attempt(s)`
-							: '';
-						throw new NodeOperationError(
-							this.getNode(),
-							`Model response does not match the JSON Schema${suffix}:\n${current.errors.join('\n')}`,
-							{ itemIndex: i },
-						);
-					}
-
-					fields = current.fields;
-				} catch (error) {
-					if (error instanceof NodeOperationError) throw error;
+				if (current.errors.length > 0) {
+					const suffix = outputFixingParser
+						? ` after ${maxRepairIterations} repair attempt(s)`
+						: '';
 					throw new NodeOperationError(
 						this.getNode(),
-						`Model returned invalid JSON. Raw response: ${rawResponse.slice(0, 500)}`,
+						`Model response does not match the JSON Schema${suffix}:\n${current.errors.join('\n')}`,
 						{ itemIndex: i },
 					);
 				}
+
+				const fields = current.fields;
 
 				const json: IDataObject = {
 					fields,
