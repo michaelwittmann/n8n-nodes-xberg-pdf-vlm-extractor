@@ -140,6 +140,31 @@ export class PdfFieldExtractor implements INodeType {
 					'JSON Schema describing the fields to extract. The LLM returns JSON matching this schema.',
 			},
 			{
+				displayName: 'Output Fixing Parser',
+				name: 'outputFixingParser',
+				type: 'boolean',
+				default: true,
+				hint: 'On: when the model returns JSON that fails schema validation, automatically retry with the errors fed back — up to the Max Repair Iterations limit.',
+				description:
+					'Whether to retry with a repair prompt when the model response fails schema validation',
+			},
+			{
+				displayName: 'Max Repair Iterations',
+				name: 'maxRepairIterations',
+				type: 'number',
+				default: 5,
+				typeOptions: {
+					minValue: 1,
+				},
+				displayOptions: {
+					show: {
+						outputFixingParser: [true],
+					},
+				},
+				hint: 'Maximum number of repair attempts before the node errors. Each iteration sends the validation errors back to the model.',
+				description: 'Maximum number of repair attempts when the output fixing parser is on',
+			},
+			{
 				displayName: 'Options',
 				name: 'options',
 				type: 'collection',
@@ -156,31 +181,6 @@ export class PdfFieldExtractor implements INodeType {
 						default: '',
 						hint: 'A sentence or two of plain-language context about the document or fields. Helps the model when field names alone are ambiguous.',
 						description: 'Optional description of the schema to help the LLM',
-					},
-					{
-						displayName: 'Output Fixing Parser',
-						name: 'outputFixingParser',
-						type: 'boolean',
-						default: true,
-						hint: 'On: when the model returns JSON that fails schema validation, automatically retry with the errors fed back — up to the Max Repair Iterations limit.',
-						description:
-							'Whether to retry with a repair prompt when the model response fails schema validation',
-					},
-					{
-						displayName: 'Max Repair Iterations',
-						name: 'maxRepairIterations',
-						type: 'number',
-						default: 5,
-						typeOptions: {
-							minValue: 1,
-						},
-						displayOptions: {
-							show: {
-								outputFixingParser: [true],
-							},
-						},
-						hint: 'Maximum number of repair attempts before the node errors. Each iteration sends the validation errors back to the model.',
-						description: 'Maximum number of repair attempts when the output fixing parser is on',
 					},
 				],
 			},
@@ -313,8 +313,8 @@ export class PdfFieldExtractor implements INodeType {
 
 				const options = this.getNodeParameter('options', i, {}) as IDataObject;
 				const schemaDescription = (options.schemaDescription as string | undefined) || undefined;
-				const outputFixingParser = (options.outputFixingParser as boolean | undefined) ?? true;
-				const maxRepairIterations = (options.maxRepairIterations as number | undefined) ?? 5;
+				const outputFixingParser = this.getNodeParameter('outputFixingParser', i, true) as boolean;
+				const maxRepairIterations = this.getNodeParameter('maxRepairIterations', i, 5) as number;
 
 				// Step 1: use xberg for text extraction only (no structuredExtraction).
 				// When the OCR fallback is off we pass no `ocr` config, so a PDF with no
