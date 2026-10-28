@@ -157,6 +157,31 @@ export class PdfFieldExtractor implements INodeType {
 						hint: 'A sentence or two of plain-language context about the document or fields. Helps the model when field names alone are ambiguous.',
 						description: 'Optional description of the schema to help the LLM',
 					},
+					{
+						displayName: 'Output Fixing Parser',
+						name: 'outputFixingParser',
+						type: 'boolean',
+						default: true,
+						hint: 'On: when the model returns JSON that fails schema validation, automatically retry with the errors fed back — up to the Max Repair Iterations limit.',
+						description:
+							'Whether to retry with a repair prompt when the model response fails schema validation',
+					},
+					{
+						displayName: 'Max Repair Iterations',
+						name: 'maxRepairIterations',
+						type: 'number',
+						default: 5,
+						typeOptions: {
+							minValue: 1,
+						},
+						displayOptions: {
+							show: {
+								outputFixingParser: [true],
+							},
+						},
+						hint: 'Maximum number of repair attempts before the node errors. Each iteration sends the validation errors back to the model.',
+						description: 'Maximum number of repair attempts when the output fixing parser is on',
+					},
 				],
 			},
 			{
@@ -288,6 +313,8 @@ export class PdfFieldExtractor implements INodeType {
 
 				const options = this.getNodeParameter('options', i, {}) as IDataObject;
 				const schemaDescription = (options.schemaDescription as string | undefined) || undefined;
+				const outputFixingParser = (options.outputFixingParser as boolean | undefined) ?? true;
+				const maxRepairIterations = (options.maxRepairIterations as number | undefined) ?? 5;
 
 				// Step 1: use xberg for text extraction only (no structuredExtraction).
 				// When the OCR fallback is off we pass no `ocr` config, so a PDF with no
@@ -356,29 +383,36 @@ export class PdfFieldExtractor implements INodeType {
 
 				let fields: IDataObject;
 				try {
-					const first = parseAndValidate(rawResponse);
-					if (first.errors.length === 0) {
-						fields = first.fields;
-					} else {
-						// Output-fixing pass: send the errors back so the model can correct them.
-						const repairPrompt =
-							`Your previous response did not match the required JSON Schema. ` +
-							`Fix the following errors and return ONLY the corrected JSON object — ` +
-							`no markdown fences, no explanation.\n\n` +
-							`Errors:\n${first.errors.join('\n')}\n\n` +
-							`Your previous response:\n${rawResponse}\n\n` +
-							`JSON Schema:\n${schemaStr}`;
-						const repairResponse = await callChatCompletion(this, i, repairPrompt);
-						const second = parseAndValidate(repairResponse);
-						if (second.errors.length > 0) {
-							throw new NodeOperationError(
-								this.getNode(),
-								`Model response still does not match the JSON Schema after repair attempt:\n${second.errors.join('\n')}`,
-								{ itemIndex: i },
-							);
+					let current = parseAndValidate(rawResponse);
+					let lastRaw = rawResponse;
+
+					if (current.errors.length > 0 && outputFixingParser) {
+						for (let attempt = 0; attempt < maxRepairIterations; attempt++) {
+							const repairPrompt =
+								`Your previous response did not match the required JSON Schema. ` +
+								`Fix the following errors and return ONLY the corrected JSON object — ` +
+								`no markdown fences, no explanation.\n\n` +
+								`Errors:\n${current.errors.join('\n')}\n\n` +
+								`Your previous response:\n${lastRaw}\n\n` +
+								`JSON Schema:\n${schemaStr}`;
+							lastRaw = await callChatCompletion(this, i, repairPrompt);
+							current = parseAndValidate(lastRaw);
+							if (current.errors.length === 0) break;
 						}
-						fields = second.fields;
 					}
+
+					if (current.errors.length > 0) {
+						const suffix = outputFixingParser
+							? ` after ${maxRepairIterations} repair attempt(s)`
+							: '';
+						throw new NodeOperationError(
+							this.getNode(),
+							`Model response does not match the JSON Schema${suffix}:\n${current.errors.join('\n')}`,
+							{ itemIndex: i },
+						);
+					}
+
+					fields = current.fields;
 				} catch (error) {
 					if (error instanceof NodeOperationError) throw error;
 					throw new NodeOperationError(
