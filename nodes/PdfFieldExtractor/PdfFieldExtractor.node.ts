@@ -23,6 +23,87 @@ import {
 	providerProperty,
 } from '../shared/xberg';
 
+type SchemaObject = {
+	type?: string | string[];
+	properties?: Record<string, SchemaObject>;
+	required?: string[];
+	pattern?: string;
+	minimum?: number;
+	maximum?: number;
+	minLength?: number;
+	maxLength?: number;
+	enum?: unknown[];
+	items?: SchemaObject;
+};
+
+/** Validate `value` against a JSON Schema subset and return human-readable error strings. */
+function collectErrors(value: unknown, schema: SchemaObject, path: string): string[] {
+	const errors: string[] = [];
+
+	// type check
+	if (schema.type !== undefined) {
+		const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+		const actual =
+			value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+		if (!types.includes(actual)) {
+			errors.push(`"${path}" expected type ${types.join('|')}, got ${actual}`);
+			return errors; // deeper checks don't make sense when the type is wrong
+		}
+	}
+
+	if (typeof value === 'string') {
+		if (schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)) {
+			errors.push(`"${path}" value "${value}" does not match pattern ${schema.pattern}`);
+		}
+		if (schema.minLength !== undefined && value.length < schema.minLength) {
+			errors.push(`"${path}" is shorter than minLength ${schema.minLength}`);
+		}
+		if (schema.maxLength !== undefined && value.length > schema.maxLength) {
+			errors.push(`"${path}" is longer than maxLength ${schema.maxLength}`);
+		}
+	}
+
+	if (typeof value === 'number') {
+		if (schema.minimum !== undefined && value < schema.minimum) {
+			errors.push(`"${path}" ${value} is less than minimum ${schema.minimum}`);
+		}
+		if (schema.maximum !== undefined && value > schema.maximum) {
+			errors.push(`"${path}" ${value} is greater than maximum ${schema.maximum}`);
+		}
+	}
+
+	if (schema.enum !== undefined) {
+		const allowed = schema.enum.map((v) => JSON.stringify(v)).join(', ');
+		if (!schema.enum.some((v) => JSON.stringify(v) === JSON.stringify(value))) {
+			errors.push(`"${path}" value ${JSON.stringify(value)} is not one of [${allowed}]`);
+		}
+	}
+
+	if (schema.properties !== undefined && typeof value === 'object' && value !== null && !Array.isArray(value)) {
+		const obj = value as Record<string, unknown>;
+
+		for (const key of schema.required ?? []) {
+			if (!(key in obj)) {
+				errors.push(`"${path ? path + '.' : ''}${key}" is required but missing`);
+			}
+		}
+
+		for (const [key, propSchema] of Object.entries(schema.properties)) {
+			if (key in obj) {
+				errors.push(...collectErrors(obj[key], propSchema, path ? `${path}.${key}` : key));
+			}
+		}
+	}
+
+	if (schema.items !== undefined && Array.isArray(value)) {
+		value.forEach((item, idx) => {
+			errors.push(...collectErrors(item, schema.items!, `${path}[${idx}]`));
+		});
+	}
+
+	return errors;
+}
+
 export class PdfFieldExtractor implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'PDF Field Extractor',
@@ -277,6 +358,15 @@ export class PdfFieldExtractor implements INodeType {
 					throw new NodeOperationError(
 						this.getNode(),
 						`Model returned invalid JSON. Raw response: ${rawResponse.slice(0, 500)}`,
+						{ itemIndex: i },
+					);
+				}
+
+				const validationErrors = collectErrors(fields, schema as SchemaObject, '');
+				if (validationErrors.length > 0) {
+					throw new NodeOperationError(
+						this.getNode(),
+						`Model response does not match the JSON Schema:\n${validationErrors.join('\n')}`,
 						{ itemIndex: i },
 					);
 				}
