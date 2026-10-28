@@ -284,6 +284,100 @@ export const binaryPropertyNameProperty: INodeProperties = {
 	description: 'Name of the input binary field that holds the PDF file to process',
 };
 
+/**
+ * Send a plain chat-completion request to the selected provider without a
+ * structured-output / grammar constraint. Works with any model, including
+ * backends (e.g. Ollama MLX) that don't support the `format: <schema>`
+ * parameter. The prompt must instruct the model to reply with raw JSON.
+ *
+ * Returns the assistant message content string; throws on HTTP error.
+ */
+export async function callChatCompletion(
+	ctx: IExecuteFunctions,
+	itemIndex: number,
+	prompt: string,
+): Promise<string> {
+	const provider = ctx.getNodeParameter('provider', itemIndex) as Provider;
+	const spec = PROVIDERS[provider];
+	const credentials = await ctx.getCredentials(spec.credential, itemIndex);
+	const rawModel = (ctx.getNodeParameter('model', itemIndex) as string).trim();
+	const base = readBaseUrl(provider, credentials);
+
+	switch (provider) {
+		case 'ollama': {
+			const url = `${base ?? 'http://localhost:11434'}/api/chat`;
+			const body = {
+				model: rawModel,
+				stream: false,
+				messages: [{ role: 'user', content: prompt }],
+			};
+			const resp = await ctx.helpers.httpRequestWithAuthentication.call(ctx, spec.credential, {
+				method: 'POST',
+				url,
+				body,
+				json: true,
+			} as IHttpRequestOptions);
+			return (resp as { message?: { content?: string } }).message?.content ?? '';
+		}
+		case 'openai': {
+			const url = `${base ?? 'https://api.openai.com/v1'}/chat/completions`;
+			const body = {
+				model: rawModel,
+				messages: [{ role: 'user', content: prompt }],
+				temperature: 0,
+			};
+			const resp = await ctx.helpers.httpRequestWithAuthentication.call(ctx, spec.credential, {
+				method: 'POST',
+				url,
+				body,
+				json: true,
+			} as IHttpRequestOptions);
+			return (
+				(resp as { choices?: Array<{ message?: { content?: string } }> }).choices?.[0]?.message
+					?.content ?? ''
+			);
+		}
+		case 'anthropic': {
+			const url = `${base ?? 'https://api.anthropic.com'}/v1/messages`;
+			const body = {
+				model: rawModel,
+				max_tokens: 4096,
+				messages: [{ role: 'user', content: prompt }],
+			};
+			const resp = await ctx.helpers.httpRequestWithAuthentication.call(ctx, spec.credential, {
+				method: 'POST',
+				url,
+				headers: { 'anthropic-version': '2023-06-01' },
+				body,
+				json: true,
+			} as IHttpRequestOptions);
+			type AnthropicContent = { type: string; text?: string };
+			const content = (resp as { content?: AnthropicContent[] }).content ?? [];
+			return content.find((b) => b.type === 'text')?.text ?? '';
+		}
+		case 'gemini': {
+			const host = base ?? 'https://generativelanguage.googleapis.com';
+			const url = `${host}/v1beta/models/${encodeURIComponent(rawModel)}:generateContent`;
+			const body = {
+				contents: [{ role: 'user', parts: [{ text: prompt }] }],
+				generationConfig: { temperature: 0 },
+			};
+			const resp = await ctx.helpers.httpRequestWithAuthentication.call(ctx, spec.credential, {
+				method: 'POST',
+				url,
+				body,
+				json: true,
+			} as IHttpRequestOptions);
+			type GeminiPart = { text?: string };
+			type GeminiCandidate = { content?: { parts?: GeminiPart[] } };
+			const candidates = (resp as { candidates?: GeminiCandidate[] }).candidates ?? [];
+			return candidates[0]?.content?.parts?.find((p) => p.text)?.text ?? '';
+		}
+		default:
+			throw new Error(`Unsupported provider: ${provider as string}`);
+	}
+}
+
 /** The OCR tuning options collection, shared by both nodes. */
 export const ocrOptionsProperty: INodeProperties = {
 	displayName: 'OCR Options',

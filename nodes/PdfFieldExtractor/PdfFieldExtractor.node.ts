@@ -10,16 +10,12 @@ import type {
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 import { extract, ExtractInputKind } from '@xberg-io/xberg';
-import type {
-	ExtractionConfig,
-	JsonValue,
-	OcrConfig,
-	StructuredExtractionConfig,
-} from '@xberg-io/xberg';
+import type { JsonValue, OcrConfig } from '@xberg-io/xberg';
 
 import {
 	binaryPropertyNameProperty,
 	buildOcrConfig,
+	callChatCompletion,
 	getLlmConfig,
 	listModels,
 	modelProperty,
@@ -36,7 +32,7 @@ export class PdfFieldExtractor implements INodeType {
 		version: 1,
 		subtitle: '={{$parameter["model"]}}',
 		description:
-			'Extract structured fields from a PDF against a JSON Schema. Expects a PDF that already has a text layer (e.g. from the PDF OCR node or a born-digital PDF); optionally falls back to VLM OCR when no text layer is present.',
+			'Extract structured fields from a PDF against a JSON Schema. Reads the PDF text layer (or OCRs when none is present) then calls the model to extract fields — works with any model, no structured-output support required.',
 		defaults: {
 			name: 'PDF Field Extractor',
 		},
@@ -79,15 +75,6 @@ export class PdfFieldExtractor implements INodeType {
 						default: '',
 						hint: 'A sentence or two of plain-language context about the document or fields. Helps the model when field names alone are ambiguous.',
 						description: 'Optional description of the schema to help the LLM',
-					},
-					{
-						displayName: 'Strict',
-						name: 'strict',
-						type: 'boolean',
-						default: false,
-						hint: 'On: force output to match the schema exactly (types and required fields). Some models follow strict mode better than others — turn off if extraction fails.',
-						description:
-							'Whether the output must exactly match the schema. Models vary in how well they honor strict mode.',
 					},
 				],
 			},
@@ -186,7 +173,6 @@ export class PdfFieldExtractor implements INodeType {
 		for (let i = 0; i < items.length; i++) {
 			try {
 				const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
-				const options = this.getNodeParameter('options', i, {}) as IDataObject;
 				const ocrFallback = this.getNodeParameter('ocrFallback', i, false) as boolean;
 				const ocrOptions = this.getNodeParameter('ocrOptions', i, {}) as IDataObject;
 
@@ -195,11 +181,13 @@ export class PdfFieldExtractor implements INodeType {
 				const binary = items[i].binary![binaryPropertyName];
 				const fileName = binary.fileName ?? 'document.pdf';
 
-				// The LLM config is always needed for structured extraction. OCR tuning
-				// options only apply when the OCR fallback is enabled.
+				// OCR tuning options only apply when the OCR fallback is enabled.
+				// getLlmConfig is still needed to build the OCR config, but field
+				// extraction is now done via a direct chat call (no structured-output
+				// grammar constraint), so any model — including MLX backends — works.
 				const llm = await getLlmConfig(this, i, ocrFallback ? ocrOptions : {});
 
-				// Parse and validate the JSON Schema before calling into xberg so a
+				// Parse and validate the JSON Schema before doing any work so a
 				// malformed schema produces a clear, item-scoped error.
 				const schemaRaw = this.getNodeParameter('jsonSchema', i) as string | IDataObject;
 				let schema: JsonValue;
@@ -217,38 +205,18 @@ export class PdfFieldExtractor implements INodeType {
 					schema = schemaRaw as JsonValue;
 				}
 
+				const options = this.getNodeParameter('options', i, {}) as IDataObject;
 				const schemaDescription = (options.schemaDescription as string | undefined) || undefined;
 
-				// No custom prompt is exposed: xberg's `prompt` fully *replaces* its
-				// built-in default (there is no extend/append hook), so a partial prompt
-				// would discard xberg's tuned template and misbehave. We always let the
-				// default apply and shape extraction via the schema + description.
-				const structuredExtraction: StructuredExtractionConfig = {
-					schema,
-					// xberg requires a schema name; it's an internal label for the LLM's
-					// structured-output mode and not worth exposing, so we fix it.
-					schemaName: 'extracted_fields',
-					schemaDescription,
-					strict: (options.strict as boolean) ?? false,
-					llm,
-				};
-
-				// When the OCR fallback is off we pass no `ocr` config at all, so a PDF
-				// with no text layer fails clearly instead of silently being OCR'd.
-				// When it's on, xberg reuses any embedded layer and only OCRs when none
-				// exists (unless Force OCR is set).
+				// Step 1: use xberg for text extraction only (no structuredExtraction).
+				// When the OCR fallback is off we pass no `ocr` config, so a PDF with no
+				// text layer fails clearly instead of silently being OCR'd.
 				let ocr: OcrConfig | undefined;
 				let forceOcr = false;
 				if (ocrFallback) {
 					ocr = buildOcrConfig(llm, ocrOptions);
 					forceOcr = (ocrOptions.forceOcr as boolean) ?? false;
 				}
-
-				const config: ExtractionConfig = {
-					forceOcr,
-					...(ocr ? { ocr } : {}),
-					structuredExtraction,
-				};
 
 				const result = await extract(
 					{
@@ -257,7 +225,11 @@ export class PdfFieldExtractor implements INodeType {
 						mimeType: 'application/pdf',
 						filename: fileName,
 					},
-					config,
+					{
+						forceOcr,
+						...(ocr ? { ocr } : {}),
+						// No structuredExtraction — xberg just gives us the text.
+					},
 				);
 
 				if (result.errors && result.errors.length > 0) {
@@ -278,9 +250,40 @@ export class PdfFieldExtractor implements INodeType {
 					);
 				}
 
+				const text = document.content ?? '';
+
+				// Step 2: call the model directly — plain chat, no format constraint.
+				// Ask it to return JSON matching the schema; parse the reply ourselves.
+				const schemaStr = JSON.stringify(schema, null, 2);
+				const descriptionLine = schemaDescription
+					? `\n\nContext: ${schemaDescription}`
+					: '';
+				const prompt =
+					`Extract fields from the document text below and return ONLY a JSON object ` +
+					`that matches this JSON Schema — no markdown fences, no explanation, just the JSON.` +
+					descriptionLine +
+					`\n\nJSON Schema:\n${schemaStr}` +
+					`\n\nDocument text:\n${text}`;
+
+				const rawResponse = await callChatCompletion(this, i, prompt);
+
+				// Strip any markdown code fences a model might wrap around the JSON.
+				const cleaned = rawResponse.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+
+				let fields: IDataObject | null = null;
+				try {
+					fields = JSON.parse(cleaned) as IDataObject;
+				} catch {
+					throw new NodeOperationError(
+						this.getNode(),
+						`Model returned invalid JSON. Raw response: ${rawResponse.slice(0, 500)}`,
+						{ itemIndex: i },
+					);
+				}
+
 				const json: IDataObject = {
-					fields: (document.structuredOutput as IDataObject) ?? null,
-					text: document.content ?? '',
+					fields,
+					text,
 					pageCount: document.counts?.pages ?? null,
 					extractionMethod: document.extractionMethod ?? null,
 					mimeType: document.mimeType ?? 'application/pdf',
