@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-xberg-pdf-vlm-extractor",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"description": "n8n community node to OCR PDFs with a Vision Language Model and extract structured fields, powered by xberg",
 	"license": "MIT",
 	"homepage": "https://github.com/michaelwittmann/n8n-nodes-xberg-pdf-vlm-extractor",
