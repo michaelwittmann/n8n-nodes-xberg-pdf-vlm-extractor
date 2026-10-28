@@ -346,27 +346,44 @@ export class PdfFieldExtractor implements INodeType {
 					`\n\nJSON Schema:\n${schemaStr}` +
 					`\n\nDocument text:\n${text}`;
 
+				const parseAndValidate = (raw: string): { fields: IDataObject; errors: string[] } => {
+					const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+					const parsed = JSON.parse(stripped) as IDataObject;
+					return { fields: parsed, errors: collectErrors(parsed, schema as SchemaObject, '') };
+				};
+
 				const rawResponse = await callChatCompletion(this, i, prompt);
 
-				// Strip any markdown code fences a model might wrap around the JSON.
-				const cleaned = rawResponse.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-
-				let fields: IDataObject | null = null;
+				let fields: IDataObject;
 				try {
-					fields = JSON.parse(cleaned) as IDataObject;
-				} catch {
+					const first = parseAndValidate(rawResponse);
+					if (first.errors.length === 0) {
+						fields = first.fields;
+					} else {
+						// Output-fixing pass: send the errors back so the model can correct them.
+						const repairPrompt =
+							`Your previous response did not match the required JSON Schema. ` +
+							`Fix the following errors and return ONLY the corrected JSON object — ` +
+							`no markdown fences, no explanation.\n\n` +
+							`Errors:\n${first.errors.join('\n')}\n\n` +
+							`Your previous response:\n${rawResponse}\n\n` +
+							`JSON Schema:\n${schemaStr}`;
+						const repairResponse = await callChatCompletion(this, i, repairPrompt);
+						const second = parseAndValidate(repairResponse);
+						if (second.errors.length > 0) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Model response still does not match the JSON Schema after repair attempt:\n${second.errors.join('\n')}`,
+								{ itemIndex: i },
+							);
+						}
+						fields = second.fields;
+					}
+				} catch (error) {
+					if (error instanceof NodeOperationError) throw error;
 					throw new NodeOperationError(
 						this.getNode(),
 						`Model returned invalid JSON. Raw response: ${rawResponse.slice(0, 500)}`,
-						{ itemIndex: i },
-					);
-				}
-
-				const validationErrors = collectErrors(fields, schema as SchemaObject, '');
-				if (validationErrors.length > 0) {
-					throw new NodeOperationError(
-						this.getNode(),
-						`Model response does not match the JSON Schema:\n${validationErrors.join('\n')}`,
 						{ itemIndex: i },
 					);
 				}
