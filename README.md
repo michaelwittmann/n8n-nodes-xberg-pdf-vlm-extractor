@@ -65,7 +65,7 @@ npm install n8n-nodes-xberg-pdf-vlm-extractor
 
   ```bash
   ollama pull glm-ocr              # OCR; or qwen3-vl / deepseek-ocr
-  ollama pull qwen3-vl:8b-instruct # field extraction (needs structured-output support)
+  ollama pull qwen3-vl:8b-instruct # field extraction; or llama3.2:3b, gemma3, qwen3.8b-mlx, …
   curl http://localhost:11434/api/tags   # confirm the models are listed
   ```
 
@@ -89,10 +89,7 @@ Models vary a lot in how well they handle OCR and schema-constrained extraction.
 | Node | Verified models | Notes |
 | --- | --- | --- |
 | **PDF OCR** | `glm-ocr` ✅ *(best in testing)*, `qwen3-vl`, `deepseek-ocr` | OCR-tuned vision models. `glm-ocr` gave the most accurate transcription. |
-| **PDF Field Extractor** | `qwen3-vl:8b-instruct` ✅ *(preferred)*, `llama3.2:3b` | Must support **structured output** (JSON-schema-constrained generation). See the note below. |
-
-> **Field extraction needs structured-output support.** The Field Extractor always asks the model for JSON constrained to your schema (via the provider's structured-output / grammar mode). Models that don't support it — e.g. some `gemma3` tags on Ollama — fail with *"structured output is unavailable"* and return empty fields. If that happens, switch to a model from the table above or upgrade Ollama. Turning off **Strict** does not help: the constraint is inherent to how extraction works.
-
+| **PDF Field Extractor** | `qwen3-vl:8b-instruct` ✅ *(preferred)*, `llama3.2:3b`, `gemma3`, `qwen3.8b-mlx` | Works with **any model that can follow instructions** — no structured-output support required. |
 
 > **Local Ollama in a container?** If n8n runs in a container and Ollama runs on the host, use `http://host.docker.internal:11434` (or `host.containers.internal` for Podman) as the Base URL.
 >
@@ -166,11 +163,11 @@ Extracts structured fields described by a JSON Schema. It expects a PDF that **a
 
 **PDF OCR:** Replace Existing Text Layer (top-level, default on), plus **OCR Options** — Languages (comma-separated ISO codes, e.g. `eng,deu`), Custom OCR Prompt, Temperature, Timeout (seconds).
 
-**PDF Field Extractor:** an **Options** collection for extraction — Schema Description and Strict mode. The **OCR if No Text Layer** toggle (default off) controls the OCR fallback; when on, an **OCR Options** collection appears (Force OCR, Languages, Custom OCR Prompt, Temperature, Timeout).
+**PDF Field Extractor:** an **Options** collection with **Schema Description** (optional plain-language context to help the model). The **OCR if No Text Layer** toggle (default off) controls the OCR fallback; when on, an **OCR Options** collection appears (Force OCR, Languages, Custom OCR Prompt, Temperature, Timeout).
 
-Shape extraction through the **JSON Schema** and **Schema Description**, not a custom prompt: xberg's extraction prompt would *replace* its tuned default outright (there's no extend/append hook), so no custom-prompt field is exposed for field extraction.
+Shape extraction through the **JSON Schema** and **Schema Description**: the node reads the PDF's text layer (or OCRs it if the fallback is on), then asks the model to return JSON matching your schema — no structured-output / grammar support required, so any instruction-following model works.
 
-> **Tip:** OCR-tuned models (e.g. `glm-ocr`, `deepseek-ocr`) are great at transcription but may extract fields less reliably. For field extraction, use a model that supports structured output — `qwen3-vl:8b-instruct` or `llama3.2:3b` worked best in testing (see [Verified models](#verified-models)). `Strict` defaults to off; add a **Schema Description** to steer the model when results are off.
+> **Tip:** OCR-tuned models (e.g. `glm-ocr`, `deepseek-ocr`) are great at transcription but may extract fields less reliably. For field extraction, any instruction-following model works — `qwen3-vl:8b-instruct` or `llama3.2:3b` worked well in testing (see [Verified models](#verified-models)). Add a **Schema Description** to steer the model when results are off.
 
 ## Local development
 

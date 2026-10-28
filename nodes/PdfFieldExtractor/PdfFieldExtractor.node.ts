@@ -10,22 +10,99 @@ import type {
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 import { extract, ExtractInputKind } from '@xberg-io/xberg';
-import type {
-	ExtractionConfig,
-	JsonValue,
-	OcrConfig,
-	StructuredExtractionConfig,
-} from '@xberg-io/xberg';
+import type { JsonValue, OcrConfig } from '@xberg-io/xberg';
 
 import {
 	binaryPropertyNameProperty,
 	buildOcrConfig,
+	callChatCompletion,
 	getLlmConfig,
 	listModels,
 	modelProperty,
 	providerCredentials,
 	providerProperty,
 } from '../shared/xberg';
+
+type SchemaObject = {
+	type?: string | string[];
+	properties?: Record<string, SchemaObject>;
+	required?: string[];
+	pattern?: string;
+	minimum?: number;
+	maximum?: number;
+	minLength?: number;
+	maxLength?: number;
+	enum?: unknown[];
+	items?: SchemaObject;
+};
+
+/** Validate `value` against a JSON Schema subset and return human-readable error strings. */
+function collectErrors(value: unknown, schema: SchemaObject, path: string): string[] {
+	const errors: string[] = [];
+
+	// type check
+	if (schema.type !== undefined) {
+		const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+		const actual =
+			value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+		if (!types.includes(actual)) {
+			errors.push(`"${path}" expected type ${types.join('|')}, got ${actual}`);
+			return errors; // deeper checks don't make sense when the type is wrong
+		}
+	}
+
+	if (typeof value === 'string') {
+		if (schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)) {
+			errors.push(`"${path}" value "${value}" does not match pattern ${schema.pattern}`);
+		}
+		if (schema.minLength !== undefined && value.length < schema.minLength) {
+			errors.push(`"${path}" is shorter than minLength ${schema.minLength}`);
+		}
+		if (schema.maxLength !== undefined && value.length > schema.maxLength) {
+			errors.push(`"${path}" is longer than maxLength ${schema.maxLength}`);
+		}
+	}
+
+	if (typeof value === 'number') {
+		if (schema.minimum !== undefined && value < schema.minimum) {
+			errors.push(`"${path}" ${value} is less than minimum ${schema.minimum}`);
+		}
+		if (schema.maximum !== undefined && value > schema.maximum) {
+			errors.push(`"${path}" ${value} is greater than maximum ${schema.maximum}`);
+		}
+	}
+
+	if (schema.enum !== undefined) {
+		const allowed = schema.enum.map((v) => JSON.stringify(v)).join(', ');
+		if (!schema.enum.some((v) => JSON.stringify(v) === JSON.stringify(value))) {
+			errors.push(`"${path}" value ${JSON.stringify(value)} is not one of [${allowed}]`);
+		}
+	}
+
+	if (schema.properties !== undefined && typeof value === 'object' && value !== null && !Array.isArray(value)) {
+		const obj = value as Record<string, unknown>;
+
+		for (const key of schema.required ?? []) {
+			if (!(key in obj)) {
+				errors.push(`"${path ? path + '.' : ''}${key}" is required but missing`);
+			}
+		}
+
+		for (const [key, propSchema] of Object.entries(schema.properties)) {
+			if (key in obj) {
+				errors.push(...collectErrors(obj[key], propSchema, path ? `${path}.${key}` : key));
+			}
+		}
+	}
+
+	if (schema.items !== undefined && Array.isArray(value)) {
+		value.forEach((item, idx) => {
+			errors.push(...collectErrors(item, schema.items!, `${path}[${idx}]`));
+		});
+	}
+
+	return errors;
+}
 
 export class PdfFieldExtractor implements INodeType {
 	description: INodeTypeDescription = {
@@ -36,7 +113,7 @@ export class PdfFieldExtractor implements INodeType {
 		version: 1,
 		subtitle: '={{$parameter["model"]}}',
 		description:
-			'Extract structured fields from a PDF against a JSON Schema. Expects a PDF that already has a text layer (e.g. from the PDF OCR node or a born-digital PDF); optionally falls back to VLM OCR when no text layer is present.',
+			'Extract structured fields from a PDF against a JSON Schema. Reads the PDF text layer (or OCRs when none is present) then calls the model to extract fields — works with any model, no structured-output support required.',
 		defaults: {
 			name: 'PDF Field Extractor',
 		},
@@ -63,6 +140,31 @@ export class PdfFieldExtractor implements INodeType {
 					'JSON Schema describing the fields to extract. The LLM returns JSON matching this schema.',
 			},
 			{
+				displayName: 'Output Fixing Parser',
+				name: 'outputFixingParser',
+				type: 'boolean',
+				default: true,
+				hint: 'On: when the model returns JSON that fails schema validation, automatically retry with the errors fed back — up to the Max Repair Iterations limit.',
+				description:
+					'Whether to retry with a repair prompt when the model response fails schema validation',
+			},
+			{
+				displayName: 'Max Repair Iterations',
+				name: 'maxRepairIterations',
+				type: 'number',
+				default: 5,
+				typeOptions: {
+					minValue: 1,
+				},
+				displayOptions: {
+					show: {
+						outputFixingParser: [true],
+					},
+				},
+				hint: 'Maximum number of repair attempts before the node errors. Each iteration sends the validation errors back to the model.',
+				description: 'Maximum number of repair attempts when the output fixing parser is on',
+			},
+			{
 				displayName: 'Options',
 				name: 'options',
 				type: 'collection',
@@ -79,15 +181,6 @@ export class PdfFieldExtractor implements INodeType {
 						default: '',
 						hint: 'A sentence or two of plain-language context about the document or fields. Helps the model when field names alone are ambiguous.',
 						description: 'Optional description of the schema to help the LLM',
-					},
-					{
-						displayName: 'Strict',
-						name: 'strict',
-						type: 'boolean',
-						default: false,
-						hint: 'On: force output to match the schema exactly (types and required fields). Some models follow strict mode better than others — turn off if extraction fails.',
-						description:
-							'Whether the output must exactly match the schema. Models vary in how well they honor strict mode.',
 					},
 				],
 			},
@@ -186,7 +279,6 @@ export class PdfFieldExtractor implements INodeType {
 		for (let i = 0; i < items.length; i++) {
 			try {
 				const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
-				const options = this.getNodeParameter('options', i, {}) as IDataObject;
 				const ocrFallback = this.getNodeParameter('ocrFallback', i, false) as boolean;
 				const ocrOptions = this.getNodeParameter('ocrOptions', i, {}) as IDataObject;
 
@@ -195,11 +287,13 @@ export class PdfFieldExtractor implements INodeType {
 				const binary = items[i].binary![binaryPropertyName];
 				const fileName = binary.fileName ?? 'document.pdf';
 
-				// The LLM config is always needed for structured extraction. OCR tuning
-				// options only apply when the OCR fallback is enabled.
+				// OCR tuning options only apply when the OCR fallback is enabled.
+				// getLlmConfig is still needed to build the OCR config, but field
+				// extraction is now done via a direct chat call (no structured-output
+				// grammar constraint), so any model — including MLX backends — works.
 				const llm = await getLlmConfig(this, i, ocrFallback ? ocrOptions : {});
 
-				// Parse and validate the JSON Schema before calling into xberg so a
+				// Parse and validate the JSON Schema before doing any work so a
 				// malformed schema produces a clear, item-scoped error.
 				const schemaRaw = this.getNodeParameter('jsonSchema', i) as string | IDataObject;
 				let schema: JsonValue;
@@ -217,38 +311,20 @@ export class PdfFieldExtractor implements INodeType {
 					schema = schemaRaw as JsonValue;
 				}
 
+				const options = this.getNodeParameter('options', i, {}) as IDataObject;
 				const schemaDescription = (options.schemaDescription as string | undefined) || undefined;
+				const outputFixingParser = this.getNodeParameter('outputFixingParser', i, true) as boolean;
+				const maxRepairIterations = this.getNodeParameter('maxRepairIterations', i, 5) as number;
 
-				// No custom prompt is exposed: xberg's `prompt` fully *replaces* its
-				// built-in default (there is no extend/append hook), so a partial prompt
-				// would discard xberg's tuned template and misbehave. We always let the
-				// default apply and shape extraction via the schema + description.
-				const structuredExtraction: StructuredExtractionConfig = {
-					schema,
-					// xberg requires a schema name; it's an internal label for the LLM's
-					// structured-output mode and not worth exposing, so we fix it.
-					schemaName: 'extracted_fields',
-					schemaDescription,
-					strict: (options.strict as boolean) ?? false,
-					llm,
-				};
-
-				// When the OCR fallback is off we pass no `ocr` config at all, so a PDF
-				// with no text layer fails clearly instead of silently being OCR'd.
-				// When it's on, xberg reuses any embedded layer and only OCRs when none
-				// exists (unless Force OCR is set).
+				// Step 1: use xberg for text extraction only (no structuredExtraction).
+				// When the OCR fallback is off we pass no `ocr` config, so a PDF with no
+				// text layer fails clearly instead of silently being OCR'd.
 				let ocr: OcrConfig | undefined;
 				let forceOcr = false;
 				if (ocrFallback) {
 					ocr = buildOcrConfig(llm, ocrOptions);
 					forceOcr = (ocrOptions.forceOcr as boolean) ?? false;
 				}
-
-				const config: ExtractionConfig = {
-					forceOcr,
-					...(ocr ? { ocr } : {}),
-					structuredExtraction,
-				};
 
 				const result = await extract(
 					{
@@ -257,7 +333,11 @@ export class PdfFieldExtractor implements INodeType {
 						mimeType: 'application/pdf',
 						filename: fileName,
 					},
-					config,
+					{
+						forceOcr,
+						...(ocr ? { ocr } : {}),
+						// No structuredExtraction — xberg just gives us the text.
+					},
 				);
 
 				if (result.errors && result.errors.length > 0) {
@@ -278,9 +358,72 @@ export class PdfFieldExtractor implements INodeType {
 					);
 				}
 
+				const text = document.content ?? '';
+
+				// Step 2: call the model directly — plain chat, no format constraint.
+				// Ask it to return JSON matching the schema; parse the reply ourselves.
+				const schemaStr = JSON.stringify(schema, null, 2);
+				const descriptionLine = schemaDescription
+					? `\n\nContext: ${schemaDescription}`
+					: '';
+				const prompt =
+					`Extract fields from the document text below and return ONLY a JSON object ` +
+					`that matches this JSON Schema — no markdown fences, no explanation, just the JSON.` +
+					descriptionLine +
+					`\n\nJSON Schema:\n${schemaStr}` +
+					`\n\nDocument text:\n${text}`;
+
+				const parseAndValidate = (raw: string): { fields: IDataObject; errors: string[] } => {
+					const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+					let parsed: IDataObject;
+					try {
+						parsed = JSON.parse(stripped) as IDataObject;
+					} catch {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Model returned invalid JSON. Raw response: ${raw.slice(0, 500)}`,
+							{ itemIndex: i },
+						);
+					}
+					return { fields: parsed, errors: collectErrors(parsed, schema as SchemaObject, '') };
+				};
+
+				const rawResponse = await callChatCompletion(this, i, prompt);
+
+				let current = parseAndValidate(rawResponse);
+				let lastRaw = rawResponse;
+
+				if (current.errors.length > 0 && outputFixingParser) {
+					for (let attempt = 0; attempt < maxRepairIterations; attempt++) {
+						const repairPrompt =
+							`Your previous response did not match the required JSON Schema. ` +
+							`Fix the following errors and return ONLY the corrected JSON object — ` +
+							`no markdown fences, no explanation.\n\n` +
+							`Errors:\n${current.errors.join('\n')}\n\n` +
+							`Your previous response:\n${lastRaw}\n\n` +
+							`JSON Schema:\n${schemaStr}`;
+						lastRaw = await callChatCompletion(this, i, repairPrompt);
+						current = parseAndValidate(lastRaw);
+						if (current.errors.length === 0) break;
+					}
+				}
+
+				if (current.errors.length > 0) {
+					const suffix = outputFixingParser
+						? ` after ${maxRepairIterations} repair attempt(s)`
+						: '';
+					throw new NodeOperationError(
+						this.getNode(),
+						`Model response does not match the JSON Schema${suffix}:\n${current.errors.join('\n')}`,
+						{ itemIndex: i },
+					);
+				}
+
+				const fields = current.fields;
+
 				const json: IDataObject = {
-					fields: (document.structuredOutput as IDataObject) ?? null,
-					text: document.content ?? '',
+					fields,
+					text,
 					pageCount: document.counts?.pages ?? null,
 					extractionMethod: document.extractionMethod ?? null,
 					mimeType: document.mimeType ?? 'application/pdf',

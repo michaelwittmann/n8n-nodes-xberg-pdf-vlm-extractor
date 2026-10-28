@@ -64,16 +64,18 @@ describe('PdfFieldExtractor specifics', () => {
 			'provider',
 			'model',
 			'jsonSchema',
+			'outputFixingParser',
+			'maxRepairIterations',
 			'options',
 			'ocrFallback',
 			'ocrOptions',
 		]);
 	});
 
-	it('keeps only Schema Description and Strict in the Options collection', () => {
+	it('keeps only Schema Description in the Options collection', () => {
 		const opts = d.properties.find((p) => p.name === 'options');
 		const fields = (opts!.options as Array<{ name: string }>).map((o) => o.name).sort();
-		expect(fields).toEqual(['schemaDescription', 'strict']);
+		expect(fields).toEqual(['schemaDescription']);
 	});
 
 	it('defaults OCR fallback off and only shows OCR Options when it is on', () => {
