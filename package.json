@@ -55,7 +55,7 @@
 		"@n8n/node-cli": "*",
 		"@vitest/coverage-v8": "^5.0.5",
 		"eslint": "9.32.0",
-		"prettier": "3.9.10",
+		"prettier": "3.10.1",
 		"release-it": "^21.1.0",
 		"typescript": "5.9.3",
 		"vitest": "^5.0.5"
